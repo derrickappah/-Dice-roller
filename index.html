@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
+  <link
+    rel="stylesheet"
+    as="style"
+    onload="this.rel='stylesheet'"
+    href="https://fonts.googleapis.com/css2?display=swap&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&amp;family=Space+Grotesk%3Awght%40400%3B500%3B700"
+  />
+  <title>Dice Roller</title>
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64," />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <style>
+    .dice-canvas {
+      width: 100%;
+      max-width: 300px;
+      height: 300px;
+      margin: 0 auto;
+    }
+    .bg-dice {
+      background-color: #202020;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div
+    class="relative flex size-full min-h-screen flex-col bg-dice justify-between group/design-root overflow-x-hidden"
+    style='font-family: "Space Grotesk", "Noto Sans", sans-serif;'
+  >
+    <div>
+      <div class="flex items-center bg-dice p-4 pb-2 justify-between">
+        <h2 class="text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center pl-12 pr-12">Dice Roller</h2>
+      </div>
+      <h1 class="text-white tracking-tight text-[32px] font-bold leading-tight px-4 text-center pb-3 pt-6">Roll the Dice</h1>
+      <p class="text-white text-base font-normal leading-normal pb-3 pt-1 px-4 text-center">Tap the button below to roll a six-sided die.</p>
+      <div class="flex justify-center mt-6">
+        <canvas id="diceCanvas" class="dice-canvas"></canvas>
+      </div>
+      <div class="flex justify-center mt-4">
+        <div id="diceResult" class="text-white text-2xl font-bold">Result: ?</div>
+      </div>
+    </div>
+    <div>
+      <div class="flex px-4 py-3 justify-center">
+        <button
+          id="rollButton"
+          class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-[#0d78f2] text-slate-50 text-base font-bold leading-normal tracking-[0.015em]"
+        >
+          <span class="truncate">Roll</span>
+        </button>
+      </div>
+      <div class="h-5 bg-dice"></div>
+    </div>
+  </div>
+
+  <!-- Audio elements for sound effects -->
+  <audio id="diceRollSound" src="https://assets.mixkit.co/sfx/preview/mixkit-dice-rolling-777.mp3"></audio>
+  <audio id="buttonClickSound" src="https://assets.mixkit.co/sfx/preview/mixkit-modern-click-1118.mp3"></audio>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { RoundedBoxGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/RoundedBoxGeometry.js';
+
+    // DOM elements
+    const rollButton = document.getElementById('rollButton');
+    const diceCanvas = document.getElementById('diceCanvas');
+    const diceResult = document.getElementById('diceResult');
+    const diceRollSound = document.getElementById('diceRollSound');
+    const buttonClickSound = document.getElementById('buttonClickSound');
+
+    // Adjust volume
+    diceRollSound.volume = 0.5;
+    buttonClickSound.volume = 0.3;
+
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x202020);
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(50, diceCanvas.clientWidth / diceCanvas.clientHeight, 0.1, 1000);
+    camera.position.set(0, 0, 3.5); // Camera close to dice
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ canvas: diceCanvas, antialias: true });
+    renderer.setSize(diceCanvas.clientWidth, diceCanvas.clientHeight);
+    renderer.shadowMap.enabled = true;
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enabled = false;
+
+    // Lighting
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 5, 5);
+    light.castShadow = true;
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+    // Function to create dice face texture & bump map
+    function createDiceFace(pipPositions, pipColor = '#000') {
+      const size = 512;
+      const canvasColor = document.createElement('canvas');
+      canvasColor.width = canvasColor.height = size;
+      const ctxC = canvasColor.getContext('2d');
+
+      const canvasBump = document.createElement('canvas');
+      canvasBump.width = canvasBump.height = size;
+      const ctxB = canvasBump.getContext('2d');
+
+      ctxC.fillStyle = '#fff';
+      ctxC.fillRect(0, 0, size, size);
+
+      ctxB.fillStyle = '#888';
+      ctxB.fillRect(0, 0, size, size);
+
+      const r = size * 0.07;
+      ctxC.fillStyle = pipColor;
+      ctxB.fillStyle = '#000';
+      for (const [x, y] of pipPositions) {
+        ctxC.beginPath();
+        ctxC.arc(x * size, y * size, r, 0, Math.PI * 2);
+        ctxC.fill();
+
+        ctxB.beginPath();
+        ctxB.arc(x * size, y * size, r, 0, Math.PI * 2);
+        ctxB.fill();
+      }
+
+      return {
+        map: new THREE.CanvasTexture(canvasColor),
+        bumpMap: new THREE.CanvasTexture(canvasBump)
+      };
+    }
+
+    // Pip positions
+    const pips = [
+      [[0.5, 0.5]], // 1
+      [[0.25, 0.25], [0.75, 0.75]], // 2
+      [[0.25, 0.25], [0.5, 0.5], [0.75, 0.75]], // 3
+      [[0.25, 0.25], [0.25, 0.75], [0.75, 0.25], [0.75, 0.75]], // 4
+      [[0.25, 0.25], [0.25, 0.75], [0.5, 0.5], [0.75, 0.25], [0.75, 0.75]], // 5
+      [[0.25, 0.25], [0.25, 0.5], [0.25, 0.75], [0.75, 0.25], [0.75, 0.5], [0.75, 0.75]] // 6
+    ];
+
+    // Create materials (aligned with Three.js cube face order: +X, -X, +Y, -Y, +Z, -Z)
+    const faces = [
+      createDiceFace(pips[1]), // 2 on +X
+      createDiceFace(pips[4]), // 5 on -X
+      createDiceFace(pips[3]), // 4 on +Y
+      createDiceFace(pips[2]), // 3 on -Y
+      createDiceFace(pips[0], '#c00'), // 1 on +Z
+      createDiceFace(pips[5]) // 6 on -Z
+    ];
+
+    const materials = faces.map(f => new THREE.MeshPhongMaterial({
+      map: f.map,
+      bumpMap: f.bumpMap,
+      bumpScale: 0.05,
+      shininess: 60
+    }));
+
+    // Larger rounded dice geometry
+    const geometry = new RoundedBoxGeometry(1.5, 1.5, 1.5, 6, 0.12);
+    const dice = new THREE.Mesh(geometry, materials);
+    dice.castShadow = true;
+    dice.receiveShadow = true;
+    scene.add(dice);
+
+    // Roll animation variables
+    let rolling = false;
+    let targetRotation = { x: 0, y: 0 };
+    let spinSpeed = 0;
+    let freeSpinFrames = 0;
+    let currentFace = 1; // Default to face 1
+
+    // Play audio with error handling
+    function playAudio(audio) {
+      audio.currentTime = 0;
+      audio.play().catch(error => {
+        console.error(`${audio.id} failed to play:`, error);
+      });
+    }
+
+    // Trigger vibration
+    function triggerVibration() {
+      if ('vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100]); // Short vibration pattern: 100ms on, 50ms off, 100ms on
+      } else {
+        console.log('Vibration API not supported on this device/browser');
+      }
+    }
+
+    function rollDice() {
+      if (rolling) return;
+
+      // Play button click sound and trigger vibration
+      playAudio(buttonClickSound);
+      triggerVibration();
+
+      rolling = true;
+      rollButton.disabled = true;
+      diceResult.textContent = 'Result: ?';
+
+      const face = Math.floor(Math.random() * 6) + 1;
+      currentFace = face;
+      console.log(`Rolling to face: ${face}`);
+
+      // Rotations to show the correct face toward the camera (+Z)
+      const faceRotations = {
+        1: { x: 0, y: 0 }, // Face 1 (+Z)
+        2: { x: 0, y: -Math.PI / 2 }, // Face 2 (+X)
+        3: { x: -Math.PI / 2, y: 0 }, // Face 3 (-Y)
+        4: { x: Math.PI / 2, y: 0 }, // Face 4 (+Y)
+        5: { x: 0, y: Math.PI / 2 }, // Face 5 (-X)
+        6: { x: Math.PI, y: 0 } // Face 6 (-Z)
+      };
+
+      targetRotation = faceRotations[face];
+      spinSpeed = 0.4;
+      freeSpinFrames = 60;
+      playAudio(diceRollSound); // Play roll sound after setting animation
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      if (rolling) {
+        if (freeSpinFrames > 0) {
+          dice.rotation.x += spinSpeed;
+          dice.rotation.y += spinSpeed * 0.8;
+          spinSpeed *= 0.98;
+          freeSpinFrames--;
+        } else {
+          dice.rotation.x += (targetRotation.x - dice.rotation.x) * 0.08;
+          dice.rotation.y += (targetRotation.y - dice.rotation.y) * 0.08;
+          if (Math.abs(targetRotation.x - dice.rotation.x) < 0.01 &&
+              Math.abs(targetRotation.y - dice.rotation.y) < 0.01) {
+            dice.rotation.x = targetRotation.x;
+            dice.rotation.y = targetRotation.y;
+            rolling = false;
+            rollButton.disabled = false;
+            diceResult.textContent = `Result: ${currentFace}`;
+            console.log(`Final face: ${currentFace}, Rotation: x=${dice.rotation.x}, y=${dice.rotation.y}`);
+          }
+        }
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    rollButton.addEventListener('click', rollDice);
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const canvasWidth = diceCanvas.clientWidth;
+      const canvasHeight = diceCanvas.clientHeight;
+      camera.aspect = canvasWidth / canvasHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(canvasWidth, canvasHeight);
+    });
+  </script>
+</body>
+</html>
